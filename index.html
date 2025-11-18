@@ -115,23 +115,15 @@
         }
 
         .file-input-wrapper {
-            position: relative;
             display: block;
             width: 100%;
         }
 
         .file-input-wrapper input[type="file"] {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
-            z-index: 2;
+            display: none;
         }
 
-        .file-input-button {
+        .file-input-label {
             display: block;
             padding: 12px 20px;
             background-color: var(--accent-color);
@@ -139,13 +131,16 @@
             border-radius: 8px;
             text-align: center;
             cursor: pointer;
-            transition: background-color 0.3s;
-            position: relative;
-            z-index: 1;
+            transition: opacity 0.3s;
+            user-select: none;
         }
 
-        .file-input-button:hover {
+        .file-input-label:hover {
             opacity: 0.8;
+        }
+
+        .file-input-label:active {
+            opacity: 0.6;
         }
 
         .file-name {
@@ -599,8 +594,8 @@
             <div class="upload-section">
                 <label>Original Language (Italian, French, Japanese, etc.)</label>
                 <div class="file-input-wrapper">
-                    <div class="file-input-button">Choose File (PDF or EPUB)</div>
                     <input type="file" id="original-file" accept=".pdf,.epub">
+                    <label for="original-file" class="file-input-label">Choose File (PDF or EPUB)</label>
                 </div>
                 <div class="file-name" id="original-name">No file selected</div>
             </div>
@@ -608,8 +603,8 @@
             <div class="upload-section">
                 <label>English Translation</label>
                 <div class="file-input-wrapper">
-                    <div class="file-input-button">Choose File (PDF or EPUB)</div>
                     <input type="file" id="translation-file" accept=".pdf,.epub">
+                    <label for="translation-file" class="file-input-label">Choose File (PDF or EPUB)</label>
                 </div>
                 <div class="file-name" id="translation-name">No file selected</div>
             </div>
