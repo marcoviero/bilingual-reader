@@ -72,7 +72,6 @@ const elements = {
     originalName: document.getElementById('original-name'),
     translationName: document.getElementById('translation-name'),
     startButton: document.getElementById('start-reading'),
-    syncButton: document.getElementById('setup-sync'),
     addSyncButton: document.getElementById('add-sync-point'),
     doneSyncButton: document.getElementById('done-sync'),
     editSyncButton: document.getElementById('edit-sync'),
@@ -119,23 +118,52 @@ function handleFileUpload(side) {
 function checkBothFilesSelected() {
     if (state.original.file && state.translation.file) {
         elements.startButton.disabled = false;
-        elements.syncButton.disabled = false;
+        // Also enable sync link
+        const syncLink = document.getElementById('sync-link');
+        if (syncLink) {
+            syncLink.style.pointerEvents = 'auto';
+            syncLink.style.opacity = '1';
+        }
     }
 }
 
+// Sync point link handler
+document.addEventListener('DOMContentLoaded', () => {
+    const syncLink = document.getElementById('sync-link');
+    if (syncLink) {
+        syncLink.style.pointerEvents = 'none';
+        syncLink.style.opacity = '0.5';
+        syncLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (state.original.file && state.translation.file) {
+                showScreen('sync');
+                updateSyncPointsList();
+            }
+        });
+    }
+});
+
 // Start reading
 elements.startButton.addEventListener('click', async () => {
-    await loadBooks();
-    showScreen('reader');
-    await renderBothSides();
+    try {
+        elements.startButton.disabled = true;
+        elements.startButton.textContent = 'Loading...';
+        
+        await loadBooks();
+        showScreen('reader');
+        await renderBothSides();
+        
+        elements.startButton.disabled = false;
+        elements.startButton.textContent = 'Start Reading';
+    } catch (error) {
+        console.error('Error loading books:', error);
+        alert(`Error loading books: ${error.message}\n\nPlease check:\n- Files are valid PDFs or EPUBs\n- Files are not corrupted\n- Check browser console for details`);
+        elements.startButton.disabled = false;
+        elements.startButton.textContent = 'Start Reading';
+    }
 });
 
 // Sync point management
-elements.syncButton.addEventListener('click', () => {
-    showScreen('sync');
-    updateSyncPointsList();
-});
-
 elements.addSyncButton.addEventListener('click', () => {
     const originalLoc = elements.originalLocation.value.trim();
     const translationLoc = elements.translationLocation.value.trim();
@@ -214,33 +242,54 @@ window.removeSyncPoint = function(index) {
 
 // Load books
 async function loadBooks() {
-    await Promise.all([
-        loadBook('original'),
-        loadBook('translation')
-    ]);
+    console.log('Loading books...');
+    console.log('Original:', state.original.file?.name, state.original.type);
+    console.log('Translation:', state.translation.file?.name, state.translation.type);
+    
+    try {
+        await Promise.all([
+            loadBook('original'),
+            loadBook('translation')
+        ]);
 
-    // Load saved sync points
-    loadSyncPoints();
-    updateSyncStatus();
+        console.log('Books loaded successfully');
+        console.log('Original pages:', state.original.totalPages);
+        console.log('Translation pages:', state.translation.totalPages);
+
+        // Load saved sync points
+        loadSyncPoints();
+        updateSyncStatus();
+    } catch (error) {
+        console.error('Error in loadBooks:', error);
+        throw error;
+    }
 }
 
 async function loadBook(side) {
+    console.log(`Loading ${side} book...`);
     const file = state[side].file;
     const type = state[side].type;
 
-    if (type === 'pdf') {
-        const data = await readFileAsArrayBuffer(file);
-        state[side].pdf = await pdfjsLib.getDocument({data}).promise;
-        state[side].totalPages = state[side].pdf.numPages;
-    } else if (type === 'epub') {
-        const data = await readFileAsArrayBuffer(file);
-        const book = ePub();
-        await book.open(data);
-        state[side].epub = book;
-        
-        // Get spine (reading order)
-        await book.ready;
-        state[side].totalPages = book.spine.length;
+    try {
+        if (type === 'pdf') {
+            const data = await readFileAsArrayBuffer(file);
+            state[side].pdf = await pdfjsLib.getDocument({data}).promise;
+            state[side].totalPages = state[side].pdf.numPages;
+            console.log(`${side} PDF loaded: ${state[side].totalPages} pages`);
+        } else if (type === 'epub') {
+            const data = await readFileAsArrayBuffer(file);
+            const book = ePub();
+            await book.open(data);
+            state[side].epub = book;
+            
+            // Get spine (reading order)
+            await book.ready;
+            state[side].totalPages = book.spine.length;
+            console.log(`${side} EPUB loaded: ${state[side].totalPages} chapters`);
+        }
+    } catch (error) {
+        console.error(`Error loading ${side} book:`, error);
+        throw new Error(`Failed to load ${side} ${type.toUpperCase()}: ${error.message}`);
     }
 }
 

@@ -218,8 +218,8 @@
         /* Theme Toggle */
         .theme-toggle {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            bottom: 20px;
+            left: 20px;
             z-index: 1000;
         }
 
@@ -228,17 +228,27 @@
             color: var(--text-primary);
             border: 1px solid var(--border-color);
             padding: 10px 16px;
-            border-radius: 8px;
+            border-radius: 20px;
             cursor: pointer;
             font-size: 14px;
             display: flex;
             align-items: center;
             gap: 8px;
             transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
         .theme-toggle-button:hover {
             background-color: var(--bg-surface);
+            transform: scale(1.05);
+        }
+
+        /* Hide theme toggle on sync/reader screens to avoid clutter */
+        #sync-screen:not([style*="display: none"]) ~ .theme-toggle,
+        #reader-screen:not([style*="display: none"]) ~ .theme-toggle {
+            bottom: auto;
+            top: 20px;
+            left: 20px;
         }
 
         /* Sync Screen */
@@ -549,8 +559,8 @@
             }
 
             .theme-toggle {
-                top: 10px;
-                right: 10px;
+                bottom: 80px;
+                left: 10px;
             }
 
             .theme-toggle-button {
@@ -611,11 +621,14 @@
 
             <div class="button-group">
                 <button class="start-button" id="start-reading" disabled>Start Reading</button>
-                <button class="sync-button" id="setup-sync" disabled>Set Sync Points</button>
             </div>
 
             <div class="info-box">
-                <strong>💡 Pro Tip:</strong> For best results, set sync points to align the content. Mark 3-5 matching locations (like chapter starts) in both books, and the app will smoothly interpolate between them.
+                <strong>📖 Quick Start:</strong> Just click "Start Reading" to begin! The app will show page 1 next to page 1, page 2 next to page 2, etc.
+            </div>
+
+            <div class="info-box" style="margin-top: 10px; background-color: rgba(255, 149, 0, 0.1); border-color: var(--warning-color);">
+                <strong>⚙️ Advanced:</strong> If your books don't align by page number, <a href="#" id="sync-link" style="color: var(--warning-color); text-decoration: underline; cursor: pointer;">set up sync points</a> to map matching locations between them.
             </div>
         </div>
     </div>
