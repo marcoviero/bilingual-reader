@@ -46,7 +46,9 @@ const state = {
         epub: null,
         currentPage: 1,
         totalPages: 0,
-        rendition: null
+        rendition: null,
+        allChapters: [],  // All chapters from EPUB
+        filteredChapters: []  // Filtered chapters
     },
     translation: {
         file: null,
@@ -56,10 +58,13 @@ const state = {
         epub: null,
         currentPage: 1,
         totalPages: 0,
-        rendition: null
+        rendition: null,
+        allChapters: [],
+        filteredChapters: []
     },
     syncPoints: [], // Array of {original: num, translation: num}
-    currentBookId: null
+    currentBookId: null,
+    filterChapters: true  // Filter out non-chapter content
 };
 
 // DOM elements
@@ -84,11 +89,20 @@ const elements = {
     syncCount: document.getElementById('sync-count'),
     originalLocation: document.getElementById('original-location'),
     translationLocation: document.getElementById('translation-location'),
-    themeToggle: document.getElementById('theme-toggle')
+    themeToggle: document.getElementById('theme-toggle'),
+    filterChapters: document.getElementById('filter-chapters')
 };
 
 // Theme toggle event listener
 elements.themeToggle.addEventListener('click', toggleTheme);
+
+// Filter chapters checkbox
+if (elements.filterChapters) {
+    elements.filterChapters.addEventListener('change', (e) => {
+        state.filterChapters = e.target.checked;
+        console.log('Chapter filtering:', state.filterChapters ? 'enabled' : 'disabled');
+    });
+}
 
 // File upload handling
 elements.originalInput.addEventListener('change', handleFileUpload('original'));
@@ -284,13 +298,58 @@ async function loadBook(side) {
             
             // Get spine (reading order)
             await book.ready;
-            state[side].totalPages = book.spine.length;
-            console.log(`${side} EPUB loaded: ${state[side].totalPages} chapters`);
+            
+            // Store all chapters
+            state[side].allChapters = book.spine.spineItems.map((item, index) => ({
+                index: index,
+                href: item.href,
+                label: item.idref || `Chapter ${index + 1}`
+            }));
+            
+            console.log(`${side} EPUB all chapters:`, state[side].allChapters.length);
+            
+            // Filter chapters if enabled
+            if (state.filterChapters) {
+                state[side].filteredChapters = filterEpubChapters(state[side].allChapters);
+                console.log(`${side} EPUB filtered chapters:`, state[side].filteredChapters.length);
+                console.log('Filtered chapter labels:', state[side].filteredChapters.map(c => c.label));
+            } else {
+                state[side].filteredChapters = state[side].allChapters;
+            }
+            
+            state[side].totalPages = state[side].filteredChapters.length;
+            console.log(`${side} EPUB loaded: ${state[side].totalPages} chapters (after filtering)`);
         }
     } catch (error) {
         console.error(`Error loading ${side} book:`, error);
         throw new Error(`Failed to load ${side} ${type.toUpperCase()}: ${error.message}`);
     }
+}
+
+// Filter EPUB chapters to only include actual chapters
+function filterEpubChapters(chapters) {
+    return chapters.filter(chapter => {
+        const label = chapter.label.toLowerCase();
+        
+        // Keep if starts with "chapter" or a number
+        if (label.match(/^chapter\s*\d+/i)) return true;
+        if (label.match(/^\d+/)) return true;
+        if (label.match(/^capitolo\s*\d+/i)) return true;  // Italian
+        if (label.match(/^chapitre\s*\d+/i)) return true;  // French
+        if (label.match(/^capítulo\s*\d+/i)) return true;  // Spanish
+        if (label.match(/^kapitel\s*\d+/i)) return true;   // German
+        
+        // Skip common frontmatter/backmatter
+        if (label.match(/^(title|copyright|toc|contents|cover|dedication|acknowledgment|preface|introduction|prologue|epilogue|appendix|bibliography|index|about|publisher)/i)) {
+            return false;
+        }
+        
+        // If it's just a number or letter, keep it
+        if (label.match(/^[0-9]+$/)) return true;
+        if (label.match(/^[ivxlcdm]+$/i) && label.length <= 5) return true; // Roman numerals
+        
+        return false;
+    });
 }
 
 function readFileAsArrayBuffer(file) {
@@ -365,30 +424,52 @@ async function renderEPUB(side, chapterNum) {
     epubContainer.style.display = 'block';
     
     const book = state[side].epub;
+    const chapters = state[side].filteredChapters;
     
-    if (chapterNum > book.spine.length || chapterNum < 1) {
+    if (chapterNum > chapters.length || chapterNum < 1) {
         epubContainer.innerHTML = '<div style="padding: 20px; color: #666;">No corresponding chapter</div>';
         return;
     }
 
-    // Clear previous rendition
-    if (state[side].rendition) {
-        state[side].rendition.destroy();
-    }
-
-    // Create new rendition
-    const rendition = book.renderTo(epubContainer, {
-        width: '100%',
-        height: '100%',
-        spread: 'none'
-    });
-
-    state[side].rendition = rendition;
-
-    // Display the chapter
-    const spineItem = book.spine.get(chapterNum - 1);
-    if (spineItem) {
-        await rendition.display(spineItem.href);
+    // Get the chapter from filtered list
+    const chapter = chapters[chapterNum - 1];
+    console.log(`Rendering ${side} chapter ${chapterNum}:`, chapter.label);
+    
+    try {
+        // Load the chapter content
+        const item = await book.spine.get(chapter.href);
+        const doc = await item.load(book.load.bind(book));
+        
+        // Extract text content and render it
+        const bodyContent = doc.querySelector('body');
+        if (bodyContent) {
+            // Clear container
+            epubContainer.innerHTML = '';
+            
+            // Create a wrapper for styling
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = 'epub-content';
+            contentWrapper.innerHTML = bodyContent.innerHTML;
+            
+            // Apply some basic styling to make it readable
+            contentWrapper.style.maxWidth = '800px';
+            contentWrapper.style.margin = '0 auto';
+            contentWrapper.style.lineHeight = '1.8';
+            contentWrapper.style.fontSize = '16px';
+            contentWrapper.style.padding = '20px';
+            
+            epubContainer.appendChild(contentWrapper);
+            
+            // Scroll to top
+            epubContainer.scrollTop = 0;
+        } else {
+            epubContainer.innerHTML = '<div style="padding: 20px; color: #666;">Could not load chapter content</div>';
+        }
+        
+        await item.unload();
+    } catch (error) {
+        console.error(`Error rendering ${side} EPUB:`, error);
+        epubContainer.innerHTML = `<div style="padding: 20px; color: #666;">Error loading chapter: ${error.message}</div>`;
     }
 }
 
@@ -472,12 +553,23 @@ document.addEventListener('keydown', async (e) => {
 });
 
 function updatePositionInfo() {
-    const originalLoc = formatLocation(state.original.currentPage, state.original.type);
-    const translationLoc = formatLocation(state.translation.currentPage, state.translation.type);
-    elements.positionInfo.textContent = `${originalLoc} / ${state.original.totalPages} ↔️ ${translationLoc} / ${state.translation.totalPages}`;
+    const originalLabel = state.original.type === 'epub' ? 'Ch' : 'Pg';
+    const translationLabel = state.translation.type === 'epub' ? 'Ch' : 'Pg';
+    
+    const originalLoc = `${originalLabel} ${state.original.currentPage}/${state.original.totalPages}`;
+    const translationLoc = `${translationLabel} ${state.translation.currentPage}/${state.translation.totalPages}`;
+    
+    elements.positionInfo.textContent = `${originalLoc} ↔️ ${translationLoc}`;
 }
 
 function updateNavigationButtons() {
+    const isPdf = state.original.type === 'pdf';
+    const prevText = isPdf ? '← Previous' : '← Previous Chapter';
+    const nextText = isPdf ? 'Next →' : 'Next Chapter →';
+    
+    elements.prevButton.textContent = prevText;
+    elements.nextButton.textContent = nextText;
+    
     elements.prevButton.disabled = state.original.currentPage === 1;
     elements.nextButton.disabled = state.original.currentPage >= state.original.totalPages;
 }

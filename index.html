@@ -13,6 +13,9 @@
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
+    <!-- JSZip (required by Epub.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
     <!-- Epub.js -->
     <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
     
@@ -481,6 +484,39 @@
             height: 100%;
             background-color: white;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px;
+        }
+
+        .epub-content {
+            max-width: 100%;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        /* Chapter filtering UI */
+        .chapter-filter-box {
+            background-color: rgba(255, 149, 0, 0.1);
+            border: 1px solid var(--warning-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+
+        .chapter-filter-box label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .chapter-filter-box input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
         }
 
         #controls {
@@ -628,7 +664,17 @@
             </div>
 
             <div class="info-box" style="margin-top: 10px; background-color: rgba(255, 149, 0, 0.1); border-color: var(--warning-color);">
-                <strong>⚙️ Advanced:</strong> If your books don't align by page number, <a href="#" id="sync-link" style="color: var(--warning-color); text-decoration: underline; cursor: pointer;">set up sync points</a> to map matching locations between them.
+                <strong>⚙️ Advanced:</strong> If your books don't align by page/chapter number, <a href="#" id="sync-link" style="color: var(--warning-color); text-decoration: underline; cursor: pointer;">set up sync points</a> to map matching locations between them.
+            </div>
+
+            <div class="chapter-filter-box">
+                <label>
+                    <input type="checkbox" id="filter-chapters" checked>
+                    <span><strong>📖 Smart Chapter Filtering</strong> (for EPUBs)</span>
+                </label>
+                <div style="margin-top: 8px; font-size: 13px; color: var(--text-secondary); margin-left: 26px;">
+                    Automatically skip frontmatter, copyright pages, and other non-chapter content. Only shows chapters that start with "Chapter" or numbers.
+                </div>
             </div>
         </div>
     </div>
@@ -644,9 +690,16 @@
                 <h3>How Sync Points Work</h3>
                 <p style="margin-top: 10px; line-height: 1.6;">
                     Mark matching locations in both books (e.g., start of chapters). 
-                    For <strong>PDFs</strong>, use page numbers. For <strong>EPUBs</strong>, use chapter numbers or section IDs.
+                    For <strong>PDFs</strong>, use page numbers. For <strong>EPUBs</strong>, use chapter numbers.
                     The app will smoothly sync the content between these points.
                 </p>
+                <div style="margin-top: 15px; padding: 12px; background-color: rgba(255, 149, 0, 0.1); border-left: 3px solid var(--warning-color); border-radius: 4px;">
+                    <strong>💡 Tip for EPUBs with extra chapters:</strong><br>
+                    <span style="font-size: 13px; line-height: 1.5;">
+                    If your translation has copyright pages, publisher info, or other frontmatter, skip them!<br>
+                    Example: If chapter 4 is unwanted, map Italian Ch3 → English Ch3, then Italian Ch4 → English Ch5
+                    </span>
+                </div>
             </div>
 
             <div class="add-sync-point">
@@ -662,6 +715,24 @@
                     </div>
                 </div>
                 <button class="add-point-button" id="add-sync-point">Add Sync Point</button>
+                
+                <div style="margin-top: 20px; padding: 15px; background-color: rgba(0, 122, 255, 0.1); border-radius: 8px; border: 1px solid var(--accent-color);">
+                    <h4 style="color: var(--accent-color); margin-bottom: 10px;">⚡ Quick Fix: Skip Unwanted Chapters</h4>
+                    <p style="font-size: 13px; line-height: 1.5; margin-bottom: 10px;">
+                        If your translation has a few extra chapters at the start (copyright, publisher info, etc.), 
+                        set how many to skip:
+                    </p>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="font-size: 13px;">Skip first</label>
+                        <input type="number" id="translation-offset" min="0" max="10" value="0" 
+                               style="width: 60px; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary);">
+                        <label style="font-size: 13px;">chapters in translation</label>
+                        <button id="apply-offset" style="padding: 6px 12px; background-color: var(--accent-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Apply</button>
+                    </div>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px; font-style: italic;">
+                        Example: If chapter 4 is unwanted, set offset to 1 starting from chapter 4
+                    </p>
+                </div>
             </div>
 
             <div class="sync-point-list">
