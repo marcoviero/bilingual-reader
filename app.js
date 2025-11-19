@@ -353,20 +353,51 @@ async function loadBook(side) {
             // Get spine (reading order)
             await book.ready;
             
-            // Store all chapters
-            state[side].allChapters = book.spine.spineItems.map((item, index) => ({
-                index: index,
-                href: item.href,
-                label: item.idref || `Chapter ${index + 1}`
-            }));
+            // Store all chapters with better label detection
+            state[side].allChapters = [];
+            for (let i = 0; i < book.spine.spineItems.length; i++) {
+                const item = book.spine.spineItems[i];
+                
+                // Try to get a meaningful label from multiple sources
+                let label = '';
+                
+                // Try the href filename first (often descriptive)
+                const hrefParts = item.href.split('/');
+                const filename = hrefParts[hrefParts.length - 1].replace('.xhtml', '').replace('.html', '');
+                
+                // Clean up common patterns
+                if (filename.match(/^(chapter|ch|cap|capitolo|chapitre)[-_]?\d+/i)) {
+                    label = filename.replace(/[-_]/g, ' ');
+                } else if (filename.match(/^\d+$/)) {
+                    label = `Chapter ${filename}`;
+                } else if (item.idref) {
+                    label = item.idref.replace(/[-_]/g, ' ');
+                } else {
+                    label = filename || `Section ${i + 1}`;
+                }
+                
+                state[side].allChapters.push({
+                    index: i,
+                    href: item.href,
+                    label: label,
+                    filename: filename
+                });
+            }
             
             console.log(`${side} EPUB all chapters:`, state[side].allChapters.length);
+            console.log(`First few chapters:`, state[side].allChapters.slice(0, 5).map(c => `[${c.index}] ${c.label} (${c.filename})`));
             
             // Filter chapters if enabled
             if (state.filterChapters) {
                 state[side].filteredChapters = filterEpubChapters(state[side].allChapters);
                 console.log(`${side} EPUB filtered chapters:`, state[side].filteredChapters.length);
-                console.log('Filtered chapter labels:', state[side].filteredChapters.map(c => c.label));
+                console.log('Filtered chapter indices:', state[side].filteredChapters.map(c => `[${c.index}] ${c.label}`));
+                
+                // Fallback: if filtering removed everything, don't filter
+                if (state[side].filteredChapters.length === 0) {
+                    console.warn(`${side}: Filtering removed all chapters! Using all chapters instead.`);
+                    state[side].filteredChapters = state[side].allChapters;
+                }
             } else {
                 state[side].filteredChapters = state[side].allChapters;
             }
@@ -384,25 +415,72 @@ async function loadBook(side) {
 function filterEpubChapters(chapters) {
     return chapters.filter(chapter => {
         const label = chapter.label.toLowerCase();
+        const filename = chapter.filename.toLowerCase();
         
-        // Keep if starts with "chapter" or a number
-        if (label.match(/^chapter\s*\d+/i)) return true;
-        if (label.match(/^\d+/)) return true;
-        if (label.match(/^capitolo\s*\d+/i)) return true;  // Italian
-        if (label.match(/^chapitre\s*\d+/i)) return true;  // French
-        if (label.match(/^capítulo\s*\d+/i)) return true;  // Spanish
-        if (label.match(/^kapitel\s*\d+/i)) return true;   // German
+        console.log(`Checking chapter: "${chapter.label}" (file: ${filename})`);
         
-        // Skip common frontmatter/backmatter
-        if (label.match(/^(title|copyright|toc|contents|cover|dedication|acknowledgment|preface|introduction|prologue|epilogue|appendix|bibliography|index|about|publisher)/i)) {
+        // Keep if starts with "chapter" and a number
+        if (label.match(/^chapter\s*\d+/i)) {
+            console.log(`  ✓ Keep: Matches "Chapter N" pattern`);
+            return true;
+        }
+        
+        // Keep if starts with a number
+        if (label.match(/^\d+/)) {
+            console.log(`  ✓ Keep: Starts with number`);
+            return true;
+        }
+        
+        // Keep if file is "chapterN" or "chN" pattern
+        if (filename.match(/^(chapter|ch|cap|capitolo|chapitre)[-_]?\d+/i)) {
+            console.log(`  ✓ Keep: Filename matches chapter pattern`);
+            return true;
+        }
+        
+        // Keep if it's just a number
+        if (filename.match(/^\d+$/)) {
+            console.log(`  ✓ Keep: Filename is just a number`);
+            return true;
+        }
+        
+        // Keep if Roman numerals (common for chapters)
+        if (label.match(/^[ivxlcdm]+$/i) && label.length <= 5) {
+            console.log(`  ✓ Keep: Roman numeral`);
+            return true;
+        }
+        
+        // International chapter patterns
+        if (label.match(/^(capitolo|chapitre|capítulo|kapitel)\s*\d+/i)) {
+            console.log(`  ✓ Keep: International chapter pattern`);
+            return true;
+        }
+        
+        // Skip common frontmatter/backmatter filenames
+        const skipPatterns = [
+            'cover', 'title', 'copyright', 'toc', 'contents',
+            'dedication', 'acknowledgment', 'preface', 'introduction',
+            'prologue', 'epilogue', 'appendix', 'bibliography',
+            'index', 'about', 'publisher', 'colophon', 'frontmatter',
+            'backmatter', 'halftitle'
+        ];
+        
+        for (const pattern of skipPatterns) {
+            if (filename.includes(pattern)) {
+                console.log(`  ✗ Skip: Matches skip pattern "${pattern}"`);
+                return false;
+            }
+        }
+        
+        // If we got here and it's early in the book (first 5 items), skip it
+        // (likely frontmatter)
+        if (chapter.index < 5 && !filename.match(/\d/)) {
+            console.log(`  ✗ Skip: Early in book with no numbers`);
             return false;
         }
         
-        // If it's just a number or letter, keep it
-        if (label.match(/^[0-9]+$/)) return true;
-        if (label.match(/^[ivxlcdm]+$/i) && label.length <= 5) return true; // Roman numerals
-        
-        return false;
+        // Otherwise keep it (be permissive rather than filtering too much)
+        console.log(`  ✓ Keep: Default (permissive)`);
+        return true;
     });
 }
 
