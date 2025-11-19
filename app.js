@@ -64,7 +64,8 @@ const state = {
     },
     syncPoints: [], // Array of {original: num, translation: num}
     currentBookId: null,
-    filterChapters: true  // Filter out non-chapter content
+    filterChapters: true,  // Filter out non-chapter content
+    textDarkMode: false  // Dark mode for reading text
 };
 
 // DOM elements
@@ -81,6 +82,8 @@ const elements = {
     doneSyncButton: document.getElementById('done-sync'),
     editSyncButton: document.getElementById('edit-sync'),
     closeButton: document.getElementById('close-reader'),
+    editSyncBottomButton: document.getElementById('edit-sync-bottom'),
+    closeBottomButton: document.getElementById('close-reader-bottom'),
     prevButton: document.getElementById('prev-page'),
     nextButton: document.getElementById('next-page'),
     positionInfo: document.getElementById('position-info'),
@@ -91,7 +94,8 @@ const elements = {
     translationLocation: document.getElementById('translation-location'),
     themeToggle: document.getElementById('theme-toggle'),
     filterChapters: document.getElementById('filter-chapters'),
-    scrollSyncToggle: document.getElementById('toggle-scroll-sync')
+    scrollSyncToggle: document.getElementById('toggle-scroll-sync'),
+    textModeToggle: document.getElementById('toggle-text-mode')
 };
 
 // Theme toggle event listener
@@ -111,12 +115,46 @@ if (elements.scrollSyncToggle) {
         scrollSyncEnabled = !scrollSyncEnabled;
         if (scrollSyncEnabled) {
             elements.scrollSyncToggle.style.backgroundColor = 'var(--success-color)';
-            elements.scrollSyncToggle.textContent = '🔗 Scroll Sync';
+            elements.scrollSyncToggle.textContent = '🔗 Scroll';
         } else {
             elements.scrollSyncToggle.style.backgroundColor = 'var(--bg-tertiary)';
-            elements.scrollSyncToggle.textContent = '🔓 Scroll Independent';
+            elements.scrollSyncToggle.textContent = '🔓 Independent';
         }
         console.log('Scroll sync:', scrollSyncEnabled ? 'enabled' : 'disabled');
+    });
+}
+
+// Text mode toggle (dark/light for reading)
+if (elements.textModeToggle) {
+    elements.textModeToggle.addEventListener('click', () => {
+        state.textDarkMode = !state.textDarkMode;
+        const originalContainer = document.getElementById('epub-original');
+        const translationContainer = document.getElementById('epub-translation');
+        
+        if (state.textDarkMode) {
+            originalContainer.classList.add('text-dark-mode');
+            translationContainer.classList.add('text-dark-mode');
+            elements.textModeToggle.textContent = '🌙 Dark Text';
+        } else {
+            originalContainer.classList.remove('text-dark-mode');
+            translationContainer.classList.remove('text-dark-mode');
+            elements.textModeToggle.textContent = '☀️ Light Text';
+        }
+        console.log('Text mode:', state.textDarkMode ? 'dark' : 'light');
+    });
+}
+
+// Bottom button handlers
+if (elements.editSyncBottomButton) {
+    elements.editSyncBottomButton.addEventListener('click', () => {
+        showScreen('sync');
+        updateSyncPointsList();
+    });
+}
+
+if (elements.closeBottomButton) {
+    elements.closeBottomButton.addEventListener('click', () => {
+        showScreen('upload');
     });
 }
 
