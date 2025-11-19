@@ -90,7 +90,8 @@ const elements = {
     originalLocation: document.getElementById('original-location'),
     translationLocation: document.getElementById('translation-location'),
     themeToggle: document.getElementById('theme-toggle'),
-    filterChapters: document.getElementById('filter-chapters')
+    filterChapters: document.getElementById('filter-chapters'),
+    scrollSyncToggle: document.getElementById('toggle-scroll-sync')
 };
 
 // Theme toggle event listener
@@ -101,6 +102,21 @@ if (elements.filterChapters) {
     elements.filterChapters.addEventListener('change', (e) => {
         state.filterChapters = e.target.checked;
         console.log('Chapter filtering:', state.filterChapters ? 'enabled' : 'disabled');
+    });
+}
+
+// Scroll sync toggle
+if (elements.scrollSyncToggle) {
+    elements.scrollSyncToggle.addEventListener('click', () => {
+        scrollSyncEnabled = !scrollSyncEnabled;
+        if (scrollSyncEnabled) {
+            elements.scrollSyncToggle.style.backgroundColor = 'var(--success-color)';
+            elements.scrollSyncToggle.textContent = '🔗 Scroll Sync';
+        } else {
+            elements.scrollSyncToggle.style.backgroundColor = 'var(--bg-tertiary)';
+            elements.scrollSyncToggle.textContent = '🔓 Scroll Independent';
+        }
+        console.log('Scroll sync:', scrollSyncEnabled ? 'enabled' : 'disabled');
     });
 }
 
@@ -373,6 +389,9 @@ async function renderBothSides() {
         renderSide('original', state.original.currentPage),
         renderSide('translation', state.translation.currentPage)
     ]);
+    
+    // Setup synchronized scrolling after both sides are rendered
+    setupSyncedScrolling();
 }
 
 async function renderSide(side, pageNum) {
@@ -433,12 +452,19 @@ async function renderEPUB(side, chapterNum) {
 
     // Get the chapter from filtered list
     const chapter = chapters[chapterNum - 1];
-    console.log(`Rendering ${side} chapter ${chapterNum}:`, chapter.label);
+    console.log(`Rendering ${side} chapter ${chapterNum}:`, chapter.label, 'at original index:', chapter.index);
     
     try {
+        // Get the spine item using the ORIGINAL index (not filtered index)
+        const spineItem = book.spine.spineItems[chapter.index];
+        if (!spineItem) {
+            console.error(`Could not find spine item at index ${chapter.index}`);
+            epubContainer.innerHTML = '<div style="padding: 20px; color: #666;">Chapter not found</div>';
+            return;
+        }
+        
         // Load the chapter content
-        const item = await book.spine.get(chapter.href);
-        const doc = await item.load(book.load.bind(book));
+        const doc = await spineItem.load(book.load.bind(book));
         
         // Extract text content and render it
         const bodyContent = doc.querySelector('body');
@@ -466,7 +492,7 @@ async function renderEPUB(side, chapterNum) {
             epubContainer.innerHTML = '<div style="padding: 20px; color: #666;">Could not load chapter content</div>';
         }
         
-        await item.unload();
+        await spineItem.unload();
     } catch (error) {
         console.error(`Error rendering ${side} EPUB:`, error);
         epubContainer.innerHTML = `<div style="padding: 20px; color: #666;">Error loading chapter: ${error.message}</div>`;
@@ -614,6 +640,63 @@ function loadSyncPoints() {
         const data = JSON.parse(saved);
         state.syncPoints = data.syncPoints || [];
         updateSyncStatus();
+    }
+}
+
+// Synchronized scrolling for EPUBs
+let scrollSyncEnabled = true;
+let lastScrollSource = null;
+
+function setupSyncedScrolling() {
+    const originalContainer = document.getElementById('epub-original');
+    const translationContainer = document.getElementById('epub-translation');
+    
+    // Show/hide scroll sync button based on content type
+    if (state.original.type === 'epub' && state.translation.type === 'epub') {
+        elements.scrollSyncToggle.style.display = 'block';
+    } else {
+        elements.scrollSyncToggle.style.display = 'none';
+        return; // Don't set up syncing for non-EPUB content
+    }
+    
+    // Remove any existing listeners by cloning
+    const newOriginal = originalContainer.cloneNode(true);
+    const newTranslation = translationContainer.cloneNode(true);
+    originalContainer.parentNode.replaceChild(newOriginal, originalContainer);
+    translationContainer.parentNode.replaceChild(newTranslation, translationContainer);
+    
+    const original = document.getElementById('epub-original');
+    const translation = document.getElementById('epub-translation');
+    
+    original.addEventListener('scroll', () => {
+        if (!scrollSyncEnabled || lastScrollSource === 'translation') {
+            lastScrollSource = null;
+            return;
+        }
+        
+        lastScrollSource = 'original';
+        syncScroll(original, translation);
+    });
+    
+    translation.addEventListener('scroll', () => {
+        if (!scrollSyncEnabled || lastScrollSource === 'original') {
+            lastScrollSource = null;
+            return;
+        }
+        
+        lastScrollSource = 'translation';
+        syncScroll(translation, original);
+    });
+}
+
+function syncScroll(source, target) {
+    // Calculate scroll percentage of source
+    const scrollPercentage = source.scrollTop / (source.scrollHeight - source.clientHeight);
+    
+    // Apply same percentage to target
+    if (isFinite(scrollPercentage)) {
+        const targetScroll = scrollPercentage * (target.scrollHeight - target.clientHeight);
+        target.scrollTop = targetScroll;
     }
 }
 
