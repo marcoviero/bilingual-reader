@@ -610,6 +610,59 @@ document.addEventListener('keydown', async (e) => {
     }
 });
 
+// Touch/swipe navigation for mobile/iPad
+let touchStartX = 0;
+let touchEndX = 0;
+let touchStartY = 0;
+let touchEndY = 0;
+
+function handleSwipe() {
+    const swipeThreshold = 50; // Minimum distance for swipe
+    const maxVerticalMovement = 100; // Max vertical movement allowed
+    
+    const horizontalDistance = touchEndX - touchStartX;
+    const verticalDistance = Math.abs(touchEndY - touchStartY);
+    
+    // Only process horizontal swipes (not vertical scrolling)
+    if (verticalDistance > maxVerticalMovement) {
+        return;
+    }
+    
+    if (Math.abs(horizontalDistance) > swipeThreshold) {
+        if (horizontalDistance > 0) {
+            // Swipe right -> Previous chapter
+            if (state.original.currentPage > 1) {
+                state.original.currentPage--;
+                renderBothSides();
+            }
+        } else {
+            // Swipe left -> Next chapter
+            if (state.original.currentPage < state.original.totalPages) {
+                state.original.currentPage++;
+                renderBothSides();
+            }
+        }
+    }
+}
+
+// Add touch listeners to reader screen
+document.addEventListener('DOMContentLoaded', () => {
+    const readerScreen = document.getElementById('reader-screen');
+    
+    readerScreen.addEventListener('touchstart', (e) => {
+        if (elements.readerScreen.style.display !== 'flex') return;
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+    
+    readerScreen.addEventListener('touchend', (e) => {
+        if (elements.readerScreen.style.display !== 'flex') return;
+        touchEndX = e.changedTouches[0].screenX;
+        touchEndY = e.changedTouches[0].screenY;
+        handleSwipe();
+    }, { passive: true });
+});
+
 function updateNavigationButtons() {
     elements.prevButton.disabled = state.original.currentPage === 1;
     elements.nextButton.disabled = state.original.currentPage >= state.original.totalPages;
