@@ -47,8 +47,8 @@ const state = {
         currentPage: 1,
         totalPages: 0,
         rendition: null,
-        allChapters: [],  // All chapters from EPUB
-        filteredChapters: []  // Filtered chapters
+        allChapters: [],
+        filteredChapters: []
     },
     translation: {
         file: null,
@@ -62,10 +62,10 @@ const state = {
         allChapters: [],
         filteredChapters: []
     },
-    syncPoints: [], // Array of {original: num, translation: num}
+    translationOffset: 0,  // How many chapters ahead/behind translation is
     currentBookId: null,
-    filterChapters: true,  // Filter out non-chapter content
-    textDarkMode: false  // Dark mode for reading text
+    filterChapters: true,
+    textDarkMode: true
 };
 
 // DOM elements
@@ -78,20 +78,15 @@ const elements = {
     originalName: document.getElementById('original-name'),
     translationName: document.getElementById('translation-name'),
     startButton: document.getElementById('start-reading'),
-    addSyncButton: document.getElementById('add-sync-point'),
-    doneSyncButton: document.getElementById('done-sync'),
-    editSyncButton: document.getElementById('edit-sync'),
     closeButton: document.getElementById('close-reader'),
-    editSyncBottomButton: document.getElementById('edit-sync-bottom'),
     closeBottomButton: document.getElementById('close-reader-bottom'),
     prevButton: document.getElementById('prev-page'),
     nextButton: document.getElementById('next-page'),
-    positionInfo: document.getElementById('position-info'),
-    syncStatus: document.getElementById('sync-status'),
-    syncPointsContainer: document.getElementById('sync-points-container'),
-    syncCount: document.getElementById('sync-count'),
-    originalLocation: document.getElementById('original-location'),
-    translationLocation: document.getElementById('translation-location'),
+    chapterSelectOriginal: document.getElementById('chapter-select-original'),
+    chapterSelectTranslation: document.getElementById('chapter-select-translation'),
+    translationBackButton: document.getElementById('translation-back'),
+    translationForwardButton: document.getElementById('translation-forward'),
+    offsetDisplay: document.getElementById('offset-display'),
     themeToggle: document.getElementById('theme-toggle'),
     filterChapters: document.getElementById('filter-chapters'),
     scrollSyncToggle: document.getElementById('toggle-scroll-sync'),
@@ -126,32 +121,110 @@ if (elements.scrollSyncToggle) {
 
 // Text mode toggle (dark/light for reading)
 if (elements.textModeToggle) {
+    // Set initial state (dark text by default)
+    elements.textModeToggle.textContent = '☀️ Light Text';
+    
     elements.textModeToggle.addEventListener('click', () => {
         state.textDarkMode = !state.textDarkMode;
-        const originalContainer = document.getElementById('epub-original');
-        const translationContainer = document.getElementById('epub-translation');
-        
-        if (state.textDarkMode) {
-            originalContainer.classList.add('text-dark-mode');
-            translationContainer.classList.add('text-dark-mode');
-            elements.textModeToggle.textContent = '🌙 Dark Text';
-        } else {
-            originalContainer.classList.remove('text-dark-mode');
-            translationContainer.classList.remove('text-dark-mode');
-            elements.textModeToggle.textContent = '☀️ Light Text';
-        }
-        console.log('Text mode:', state.textDarkMode ? 'dark' : 'light');
+        applyTextMode();
     });
+}
+
+function applyTextMode() {
+    const originalContainer = document.getElementById('epub-original');
+    const translationContainer = document.getElementById('epub-translation');
+    
+    if (state.textDarkMode) {
+        originalContainer.classList.add('text-dark-mode');
+        translationContainer.classList.add('text-dark-mode');
+        elements.textModeToggle.textContent = '☀️ Light Text';
+    } else {
+        originalContainer.classList.remove('text-dark-mode');
+        translationContainer.classList.remove('text-dark-mode');
+        elements.textModeToggle.textContent = '🌙 Dark Text';
+    }
+    console.log('Text mode:', state.textDarkMode ? 'dark' : 'light');
+}
+
+// Offset adjustment buttons
+if (elements.translationBackButton) {
+    elements.translationBackButton.addEventListener('click', () => {
+        state.translationOffset--;
+        updateOffsetDisplay();
+        renderBothSides();
+    });
+}
+
+if (elements.translationForwardButton) {
+    elements.translationForwardButton.addEventListener('click', () => {
+        state.translationOffset++;
+        updateOffsetDisplay();
+        renderBothSides();
+    });
+}
+
+function updateOffsetDisplay() {
+    const offset = state.translationOffset;
+    if (offset === 0) {
+        elements.offsetDisplay.textContent = '±0';
+    } else if (offset > 0) {
+        elements.offsetDisplay.textContent = `+${offset}`;
+    } else {
+        elements.offsetDisplay.textContent = `${offset}`;
+    }
+}
+
+// Chapter selection dropdowns
+if (elements.chapterSelectOriginal) {
+    elements.chapterSelectOriginal.addEventListener('change', async (e) => {
+        const selectedIndex = parseInt(e.target.value);
+        state.original.currentPage = selectedIndex + 1;
+        await renderBothSides();
+    });
+}
+
+if (elements.chapterSelectTranslation) {
+    elements.chapterSelectTranslation.addEventListener('change', async (e) => {
+        const selectedIndex = parseInt(e.target.value);
+        state.translation.currentPage = selectedIndex + 1;
+        // Update offset based on manual selection
+        state.translationOffset = state.translation.currentPage - state.original.currentPage;
+        updateOffsetDisplay();
+        await renderBothSides();
+    });
+}
+
+function populateChapterDropdowns() {
+    // Populate original dropdown
+    if (elements.chapterSelectOriginal && state.original.filteredChapters) {
+        elements.chapterSelectOriginal.innerHTML = '';
+        state.original.filteredChapters.forEach((chapter, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `Ch ${index + 1}: ${chapter.label}`;
+            if (index === state.original.currentPage - 1) {
+                option.selected = true;
+            }
+            elements.chapterSelectOriginal.appendChild(option);
+        });
+    }
+    
+    // Populate translation dropdown
+    if (elements.chapterSelectTranslation && state.translation.filteredChapters) {
+        elements.chapterSelectTranslation.innerHTML = '';
+        state.translation.filteredChapters.forEach((chapter, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `Ch ${index + 1}: ${chapter.label}`;
+            if (index === state.translation.currentPage - 1) {
+                option.selected = true;
+            }
+            elements.chapterSelectTranslation.appendChild(option);
+        });
+    }
 }
 
 // Bottom button handlers
-if (elements.editSyncBottomButton) {
-    elements.editSyncBottomButton.addEventListener('click', () => {
-        showScreen('sync');
-        updateSyncPointsList();
-    });
-}
-
 if (elements.closeBottomButton) {
     elements.closeBottomButton.addEventListener('click', () => {
         showScreen('upload');
@@ -195,22 +268,6 @@ function checkBothFilesSelected() {
     }
 }
 
-// Sync point link handler
-document.addEventListener('DOMContentLoaded', () => {
-    const syncLink = document.getElementById('sync-link');
-    if (syncLink) {
-        syncLink.style.pointerEvents = 'none';
-        syncLink.style.opacity = '0.5';
-        syncLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (state.original.file && state.translation.file) {
-                showScreen('sync');
-                updateSyncPointsList();
-            }
-        });
-    }
-});
-
 // Start reading
 elements.startButton.addEventListener('click', async () => {
     try {
@@ -231,83 +288,6 @@ elements.startButton.addEventListener('click', async () => {
     }
 });
 
-// Sync point management
-elements.addSyncButton.addEventListener('click', () => {
-    const originalLoc = elements.originalLocation.value.trim();
-    const translationLoc = elements.translationLocation.value.trim();
-
-    if (!originalLoc || !translationLoc) {
-        alert('Please enter both locations');
-        return;
-    }
-
-    const originalNum = parseLocationToNumber(originalLoc, state.original.type);
-    const translationNum = parseLocationToNumber(translationLoc, state.translation.type);
-
-    if (originalNum === null || translationNum === null) {
-        alert('Invalid location format. Use numbers like "1", "5", "23"');
-        return;
-    }
-
-    state.syncPoints.push({
-        original: originalNum,
-        translation: translationNum
-    });
-
-    state.syncPoints.sort((a, b) => a.original - b.original);
-
-    elements.originalLocation.value = '';
-    elements.translationLocation.value = '';
-    
-    updateSyncPointsList();
-    saveSyncPoints();
-});
-
-elements.doneSyncButton.addEventListener('click', () => {
-    showScreen('upload');
-});
-
-elements.editSyncButton.addEventListener('click', () => {
-    showScreen('sync');
-    updateSyncPointsList();
-});
-
-function parseLocationToNumber(loc, type) {
-    // Extract just the number from strings like "page 5", "chapter 3", "5", etc.
-    const match = loc.match(/\d+/);
-    return match ? parseInt(match[0]) : null;
-}
-
-function updateSyncPointsList() {
-    elements.syncCount.textContent = `(${state.syncPoints.length})`;
-    
-    if (state.syncPoints.length === 0) {
-        elements.syncPointsContainer.innerHTML = '<p style="color: #666; font-style: italic;">No sync points set. Add at least 2 for best results.</p>';
-        return;
-    }
-
-    elements.syncPointsContainer.innerHTML = state.syncPoints.map((point, index) => `
-        <div class="sync-point-item">
-            <div class="location">
-                <strong>Original:</strong> ${formatLocation(point.original, state.original.type)} 
-                ↔️ 
-                <strong>Translation:</strong> ${formatLocation(point.translation, state.translation.type)}
-            </div>
-            <button onclick="removeSyncPoint(${index})">Remove</button>
-        </div>
-    `).join('');
-}
-
-function formatLocation(num, type) {
-    return type === 'epub' ? `Chapter ${num}` : `Page ${num}`;
-}
-
-window.removeSyncPoint = function(index) {
-    state.syncPoints.splice(index, 1);
-    updateSyncPointsList();
-    saveSyncPoints();
-};
-
 // Load books
 async function loadBooks() {
     console.log('Loading books...');
@@ -324,9 +304,11 @@ async function loadBooks() {
         console.log('Original pages:', state.original.totalPages);
         console.log('Translation pages:', state.translation.totalPages);
 
-        // Load saved sync points
-        loadSyncPoints();
-        updateSyncStatus();
+        // Initialize offset display
+        updateOffsetDisplay();
+        
+        // Populate chapter dropdowns
+        populateChapterDropdowns();
     } catch (error) {
         console.error('Error in loadBooks:', error);
         throw error;
@@ -495,16 +477,24 @@ function readFileAsArrayBuffer(file) {
 
 // Rendering
 async function renderBothSides() {
-    updatePositionInfo();
     updateNavigationButtons();
 
-    const translationPage = calculateCorrespondingPage(state.original.currentPage);
-    state.translation.currentPage = translationPage;
+    // Calculate translation page using offset
+    const translationPage = state.original.currentPage + state.translationOffset;
+    state.translation.currentPage = Math.max(1, Math.min(translationPage, state.translation.totalPages));
 
     await Promise.all([
         renderSide('original', state.original.currentPage),
         renderSide('translation', state.translation.currentPage)
     ]);
+    
+    // Update dropdowns to reflect current position
+    if (elements.chapterSelectOriginal) {
+        elements.chapterSelectOriginal.value = state.original.currentPage - 1;
+    }
+    if (elements.chapterSelectTranslation) {
+        elements.chapterSelectTranslation.value = state.translation.currentPage - 1;
+    }
     
     // Setup synchronized scrolling after both sides are rendered
     setupSyncedScrolling();
@@ -604,6 +594,11 @@ async function renderEPUB(side, chapterNum) {
             
             // Scroll to top
             epubContainer.scrollTop = 0;
+            
+            // Apply text mode (handles initial dark mode)
+            if (typeof applyTextMode === 'function') {
+                applyTextMode();
+            }
         } else {
             epubContainer.innerHTML = '<div style="padding: 20px; color: #666;">Could not load chapter content</div>';
         }
@@ -616,56 +611,6 @@ async function renderEPUB(side, chapterNum) {
 }
 
 // Sync point calculation
-function calculateCorrespondingPage(originalPage) {
-    if (state.syncPoints.length === 0) {
-        // No sync points - simple 1:1 mapping
-        return originalPage;
-    }
-
-    if (state.syncPoints.length === 1) {
-        // Only one sync point - use offset
-        const offset = state.syncPoints[0].translation - state.syncPoints[0].original;
-        return Math.max(1, originalPage + offset);
-    }
-
-    // Find the surrounding sync points
-    let before = null;
-    let after = null;
-
-    for (let i = 0; i < state.syncPoints.length; i++) {
-        if (state.syncPoints[i].original <= originalPage) {
-            before = state.syncPoints[i];
-        }
-        if (state.syncPoints[i].original >= originalPage && !after) {
-            after = state.syncPoints[i];
-        }
-    }
-
-    // Before first sync point
-    if (!before) {
-        const firstPoint = state.syncPoints[0];
-        const offset = firstPoint.translation - firstPoint.original;
-        return Math.max(1, originalPage + offset);
-    }
-
-    // After last sync point
-    if (!after) {
-        const lastPoint = state.syncPoints[state.syncPoints.length - 1];
-        const offset = lastPoint.translation - lastPoint.original;
-        return originalPage + offset;
-    }
-
-    // Interpolate between two sync points
-    if (before.original === originalPage) {
-        return before.translation;
-    }
-
-    const ratio = (originalPage - before.original) / (after.original - before.original);
-    const translationPage = Math.round(before.translation + ratio * (after.translation - before.translation));
-    
-    return Math.max(1, translationPage);
-}
-
 // Navigation
 elements.prevButton.addEventListener('click', async () => {
     if (state.original.currentPage > 1) {
@@ -694,34 +639,9 @@ document.addEventListener('keydown', async (e) => {
     }
 });
 
-function updatePositionInfo() {
-    const originalLabel = state.original.type === 'epub' ? 'Ch' : 'Pg';
-    const translationLabel = state.translation.type === 'epub' ? 'Ch' : 'Pg';
-    
-    const originalLoc = `${originalLabel} ${state.original.currentPage}/${state.original.totalPages}`;
-    const translationLoc = `${translationLabel} ${state.translation.currentPage}/${state.translation.totalPages}`;
-    
-    elements.positionInfo.textContent = `${originalLoc} ↔️ ${translationLoc}`;
-}
-
 function updateNavigationButtons() {
-    const isPdf = state.original.type === 'pdf';
-    const prevText = isPdf ? '← Previous' : '← Previous Chapter';
-    const nextText = isPdf ? 'Next →' : 'Next Chapter →';
-    
-    elements.prevButton.textContent = prevText;
-    elements.nextButton.textContent = nextText;
-    
     elements.prevButton.disabled = state.original.currentPage === 1;
     elements.nextButton.disabled = state.original.currentPage >= state.original.totalPages;
-}
-
-function updateSyncStatus() {
-    if (state.syncPoints.length > 0) {
-        elements.syncStatus.textContent = `✓ ${state.syncPoints.length} sync points active`;
-    } else {
-        elements.syncStatus.textContent = 'No sync points (1:1 mapping)';
-    }
 }
 
 // Screen management
@@ -734,30 +654,6 @@ function showScreen(screen) {
 elements.closeButton.addEventListener('click', () => {
     showScreen('upload');
 });
-
-// Local storage for sync points
-function saveSyncPoints() {
-    if (state.currentBookId) {
-        const data = {
-            syncPoints: state.syncPoints,
-            originalName: state.original.file?.name,
-            translationName: state.translation.file?.name
-        };
-        localStorage.setItem(`sync_${state.currentBookId}`, JSON.stringify(data));
-    }
-}
-
-function loadSyncPoints() {
-    // Generate a simple book ID based on filenames
-    state.currentBookId = `${state.original.file.name}_${state.translation.file.name}`.replace(/[^a-zA-Z0-9]/g, '_');
-    
-    const saved = localStorage.getItem(`sync_${state.currentBookId}`);
-    if (saved) {
-        const data = JSON.parse(saved);
-        state.syncPoints = data.syncPoints || [];
-        updateSyncStatus();
-    }
-}
 
 // Synchronized scrolling for EPUBs
 let scrollSyncEnabled = true;

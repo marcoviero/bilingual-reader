@@ -544,6 +544,41 @@
             border-top: 1px solid var(--border-color);
         }
 
+        .chapter-select {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 150px;
+            max-width: 200px;
+        }
+
+        .chapter-select option {
+            background-color: var(--bg-surface);
+            color: var(--text-primary);
+        }
+
+        .offset-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: var(--bg-tertiary);
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .offset-display {
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 40px;
+            text-align: center;
+        }
+
         .nav-button {
             background-color: var(--accent-color);
             color: white;
@@ -554,6 +589,13 @@
             font-size: 14px;
             font-weight: 500;
             transition: opacity 0.3s;
+        }
+
+        .nav-button.small {
+            padding: 4px 12px;
+            font-size: 16px;
+            background-color: transparent;
+            color: var(--text-primary);
         }
 
         .nav-button:hover:not(:disabled) {
@@ -810,16 +852,18 @@
         </div>
 
         <div id="controls">
-            <button class="nav-button" id="prev-page">← Previous</button>
-            <div>
-                <div class="position-info" id="position-info">Loading...</div>
-                <div class="sync-status" id="sync-status"></div>
+            <button class="nav-button" id="prev-page">← Prev</button>
+            <select id="chapter-select-original" class="chapter-select"></select>
+            <div class="offset-controls">
+                <button class="nav-button small" id="translation-back">◄</button>
+                <span class="offset-display" id="offset-display">±0</span>
+                <button class="nav-button small" id="translation-forward">►</button>
             </div>
+            <select id="chapter-select-translation" class="chapter-select"></select>
             <button class="nav-button" id="next-page">Next →</button>
-            <button class="nav-button" id="toggle-scroll-sync" style="display: none; background-color: var(--success-color);">🔗 Scroll</button>
+            <button class="nav-button" id="toggle-scroll-sync" style="display: none; background-color: var(--success-color);">🔗</button>
             <button class="nav-button secondary" id="toggle-text-mode">☀️ Light Text</button>
-            <button class="nav-button secondary" id="edit-sync-bottom">⚙️ Sync</button>
-            <button class="nav-button danger" id="close-reader-bottom">✕ Close</button>
+            <button class="nav-button danger" id="close-reader-bottom">✕</button>
         </div>
     </div>
 
