@@ -83,7 +83,6 @@ const elements = {
     prevButton: document.getElementById('prev-page'),
     nextButton: document.getElementById('next-page'),
     chapterSelectOriginal: document.getElementById('chapter-select-original'),
-    chapterSelectTranslation: document.getElementById('chapter-select-translation'),
     translationBackButton: document.getElementById('translation-back'),
     translationForwardButton: document.getElementById('translation-forward'),
     offsetDisplay: document.getElementById('offset-display'),
@@ -174,22 +173,11 @@ function updateOffsetDisplay() {
     }
 }
 
-// Chapter selection dropdowns
+// Chapter selection dropdown
 if (elements.chapterSelectOriginal) {
     elements.chapterSelectOriginal.addEventListener('change', async (e) => {
         const selectedIndex = parseInt(e.target.value);
         state.original.currentPage = selectedIndex + 1;
-        await renderBothSides();
-    });
-}
-
-if (elements.chapterSelectTranslation) {
-    elements.chapterSelectTranslation.addEventListener('change', async (e) => {
-        const selectedIndex = parseInt(e.target.value);
-        state.translation.currentPage = selectedIndex + 1;
-        // Update offset based on manual selection
-        state.translationOffset = state.translation.currentPage - state.original.currentPage;
-        updateOffsetDisplay();
         await renderBothSides();
     });
 }
@@ -206,20 +194,6 @@ function populateChapterDropdowns() {
                 option.selected = true;
             }
             elements.chapterSelectOriginal.appendChild(option);
-        });
-    }
-    
-    // Populate translation dropdown
-    if (elements.chapterSelectTranslation && state.translation.filteredChapters) {
-        elements.chapterSelectTranslation.innerHTML = '';
-        state.translation.filteredChapters.forEach((chapter, index) => {
-            const option = document.createElement('option');
-            option.value = index;
-            option.textContent = `Ch ${index + 1}: ${chapter.label}`;
-            if (index === state.translation.currentPage - 1) {
-                option.selected = true;
-            }
-            elements.chapterSelectTranslation.appendChild(option);
         });
     }
 }
@@ -488,12 +462,9 @@ async function renderBothSides() {
         renderSide('translation', state.translation.currentPage)
     ]);
     
-    // Update dropdowns to reflect current position
+    // Update dropdown to reflect current position
     if (elements.chapterSelectOriginal) {
         elements.chapterSelectOriginal.value = state.original.currentPage - 1;
-    }
-    if (elements.chapterSelectTranslation) {
-        elements.chapterSelectTranslation.value = state.translation.currentPage - 1;
     }
     
     // Setup synchronized scrolling after both sides are rendered
