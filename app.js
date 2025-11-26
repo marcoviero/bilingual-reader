@@ -268,6 +268,9 @@ async function loadBooks() {
     console.log('Original:', state.original.file?.name, state.original.type);
     console.log('Translation:', state.translation.file?.name, state.translation.type);
     
+    // Reset scroll sync for new books
+    scrollListenersAttached = false;
+    
     try {
         await Promise.all([
             loadBook('original'),
@@ -682,6 +685,7 @@ elements.closeButton.addEventListener('click', () => {
 // Synchronized scrolling for EPUBs
 let scrollSyncEnabled = true;
 let lastScrollSource = null;
+let scrollListenersAttached = false;
 
 function setupSyncedScrolling() {
     const originalContainer = document.getElementById('epub-original');
@@ -692,40 +696,46 @@ function setupSyncedScrolling() {
         elements.scrollSyncToggle.style.display = 'block';
     } else {
         elements.scrollSyncToggle.style.display = 'none';
-        return; // Don't set up syncing for non-EPUB content
+        return;
     }
     
-    // Remove any existing listeners by cloning
-    const newOriginal = originalContainer.cloneNode(true);
-    const newTranslation = translationContainer.cloneNode(true);
-    originalContainer.parentNode.replaceChild(newOriginal, originalContainer);
-    translationContainer.parentNode.replaceChild(newTranslation, translationContainer);
+    // Only attach listeners once
+    if (scrollListenersAttached) {
+        return;
+    }
     
-    const original = document.getElementById('epub-original');
-    const translation = document.getElementById('epub-translation');
-    
-    original.addEventListener('scroll', () => {
+    const handleOriginalScroll = () => {
         if (!scrollSyncEnabled || lastScrollSource === 'translation') {
             lastScrollSource = null;
             return;
         }
         
         lastScrollSource = 'original';
-        syncScroll(original, translation);
-    });
+        const translation = document.getElementById('epub-translation');
+        syncScroll(originalContainer, translation);
+    };
     
-    translation.addEventListener('scroll', () => {
+    const handleTranslationScroll = () => {
         if (!scrollSyncEnabled || lastScrollSource === 'original') {
             lastScrollSource = null;
             return;
         }
         
         lastScrollSource = 'translation';
-        syncScroll(translation, original);
-    });
+        const original = document.getElementById('epub-original');
+        syncScroll(translationContainer, original);
+    };
+    
+    originalContainer.addEventListener('scroll', handleOriginalScroll, { passive: true });
+    translationContainer.addEventListener('scroll', handleTranslationScroll, { passive: true });
+    
+    scrollListenersAttached = true;
+    console.log('Scroll sync listeners attached');
 }
 
 function syncScroll(source, target) {
+    if (!target || !source) return;
+    
     // Calculate scroll percentage of source
     const scrollPercentage = source.scrollTop / (source.scrollHeight - source.clientHeight);
     
