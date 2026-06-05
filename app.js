@@ -1,6 +1,89 @@
 // Set up PDF.js worker
 if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.min.js';
+}
+
+// ============================================================
+// IndexedDB — Session Storage
+// ============================================================
+
+const DB_NAME = 'BilingualReaderDB';
+const DB_VERSION = 1;
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('sessions')) {
+                db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+            }
+            if (!db.objectStoreNames.contains('sessionFiles')) {
+                db.createObjectStore('sessionFiles', { keyPath: 'id' });
+            }
+        };
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function dbGetAll(storeName) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function dbGet(storeName, id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(id);
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function dbPut(storeName, record) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction(storeName, 'readwrite').objectStore(storeName).put(record);
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function dbDelete(storeName, id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction(storeName, 'readwrite').objectStore(storeName).delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function getAllSessions() {
+    const sessions = await dbGetAll('sessions');
+    return sessions.sort((a, b) => b.lastOpened - a.lastOpened);
+}
+
+async function updateSessionPosition(id, currentPage, translationOffset) {
+    const meta = await dbGet('sessions', id);
+    if (!meta) return;
+    meta.currentPage = currentPage;
+    meta.translationOffset = translationOffset;
+    meta.lastOpened = Date.now();
+    await dbPut('sessions', meta);
+}
+
+async function deleteSession(id) {
+    await dbDelete('sessions', id);
+    await dbDelete('sessionFiles', id);
+}
+
+function stripExt(filename) {
+    return filename.replace(/\.[^.]+$/, '');
 }
 
 // Theme Management
@@ -62,10 +145,11 @@ const state = {
         allChapters: [],
         filteredChapters: []
     },
-    translationOffset: 0,  // How many chapters ahead/behind translation is
+    translationOffset: 0,
     currentBookId: null,
+    currentSessionId: null,
     filterChapters: true,
-    textDarkMode: true
+    textDarkMode: false
 };
 
 // DOM elements
@@ -89,7 +173,8 @@ const elements = {
     themeToggle: document.getElementById('theme-toggle'),
     filterChapters: document.getElementById('filter-chapters'),
     scrollSyncToggle: document.getElementById('toggle-scroll-sync'),
-    textModeToggle: document.getElementById('toggle-text-mode')
+    textModeToggle: document.getElementById('toggle-text-mode'),
+    panelToggle: document.getElementById('panel-toggle')
 };
 
 // Theme toggle event listener
@@ -120,9 +205,8 @@ if (elements.scrollSyncToggle) {
 
 // Text mode toggle (dark/light for reading)
 if (elements.textModeToggle) {
-    // Set initial state (dark text by default)
-    elements.textModeToggle.textContent = '☀️ Light Text';
-    
+    elements.textModeToggle.textContent = '🌙 Dark Text';
+
     elements.textModeToggle.addEventListener('click', () => {
         state.textDarkMode = !state.textDarkMode;
         applyTextMode();
@@ -200,8 +284,12 @@ function populateChapterDropdowns() {
 
 // Bottom button handlers
 if (elements.closeBottomButton) {
-    elements.closeBottomButton.addEventListener('click', () => {
+    elements.closeBottomButton.addEventListener('click', async () => {
+        if (state.currentSessionId) {
+            await updateSessionPosition(state.currentSessionId, state.original.currentPage, state.translationOffset);
+        }
         showScreen('upload');
+        renderLibrary();
     });
 }
 
@@ -249,6 +337,7 @@ elements.startButton.addEventListener('click', async () => {
         elements.startButton.textContent = 'Loading...';
         
         await loadBooks();
+        await saveCurrentSession();
         showScreen('reader');
         await renderBothSides();
         
@@ -292,39 +381,26 @@ async function loadBooks() {
     }
 }
 
-async function loadBook(side) {
-    console.log(`Loading ${side} book...`);
-    const file = state[side].file;
+async function loadBookFromBuffer(side, data) {
     const type = state[side].type;
 
     try {
         if (type === 'pdf') {
-            const data = await readFileAsArrayBuffer(file);
             state[side].pdf = await pdfjsLib.getDocument({data}).promise;
             state[side].totalPages = state[side].pdf.numPages;
             console.log(`${side} PDF loaded: ${state[side].totalPages} pages`);
         } else if (type === 'epub') {
-            const data = await readFileAsArrayBuffer(file);
             const book = ePub();
             await book.open(data);
             state[side].epub = book;
-            
-            // Get spine (reading order)
             await book.ready;
-            
-            // Store all chapters with better label detection
+
             state[side].allChapters = [];
             for (let i = 0; i < book.spine.spineItems.length; i++) {
                 const item = book.spine.spineItems[i];
-                
-                // Try to get a meaningful label from multiple sources
                 let label = '';
-                
-                // Try the href filename first (often descriptive)
                 const hrefParts = item.href.split('/');
                 const filename = hrefParts[hrefParts.length - 1].replace('.xhtml', '').replace('.html', '');
-                
-                // Clean up common patterns
                 if (filename.match(/^(chapter|ch|cap|capitolo|chapitre)[-_]?\d+/i)) {
                     label = filename.replace(/[-_]/g, ' ');
                 } else if (filename.match(/^\d+$/)) {
@@ -334,40 +410,76 @@ async function loadBook(side) {
                 } else {
                     label = filename || `Section ${i + 1}`;
                 }
-                
-                state[side].allChapters.push({
-                    index: i,
-                    href: item.href,
-                    label: label,
-                    filename: filename
-                });
+                state[side].allChapters.push({ index: i, href: item.href, label, filename });
             }
-            
-            console.log(`${side} EPUB all chapters:`, state[side].allChapters.length);
-            console.log(`First few chapters:`, state[side].allChapters.slice(0, 5).map(c => `[${c.index}] ${c.label} (${c.filename})`));
-            
-            // Filter chapters if enabled
+
             if (state.filterChapters) {
                 state[side].filteredChapters = filterEpubChapters(state[side].allChapters);
-                console.log(`${side} EPUB filtered chapters:`, state[side].filteredChapters.length);
-                console.log('Filtered chapter indices:', state[side].filteredChapters.map(c => `[${c.index}] ${c.label}`));
-                
-                // Fallback: if filtering removed everything, don't filter
                 if (state[side].filteredChapters.length === 0) {
-                    console.warn(`${side}: Filtering removed all chapters! Using all chapters instead.`);
                     state[side].filteredChapters = state[side].allChapters;
                 }
             } else {
                 state[side].filteredChapters = state[side].allChapters;
             }
-            
+
             state[side].totalPages = state[side].filteredChapters.length;
-            console.log(`${side} EPUB loaded: ${state[side].totalPages} chapters (after filtering)`);
+            console.log(`${side} EPUB loaded: ${state[side].totalPages} chapters`);
         }
     } catch (error) {
         console.error(`Error loading ${side} book:`, error);
         throw new Error(`Failed to load ${side} ${type.toUpperCase()}: ${error.message}`);
     }
+}
+
+async function loadBook(side) {
+    console.log(`Loading ${side} book...`);
+    const file = state[side].file;
+    state[side].type = file.name.toLowerCase().endsWith('.epub') ? 'epub' : 'pdf';
+    const data = await readFileAsArrayBuffer(file);
+    await loadBookFromBuffer(side, data);
+}
+
+async function saveCurrentSession() {
+    const origFile = state.original.file;
+    const transFile = state.translation.file;
+    if (!origFile || !transFile) return;
+
+    const originalName = origFile.name;
+    const translationName = transFile.name;
+    const name = `${stripExt(originalName)} / ${stripExt(translationName)}`;
+
+    const sessions = await getAllSessions();
+    const existing = sessions.find(s => s.originalName === originalName && s.translationName === translationName);
+
+    if (existing) {
+        await updateSessionPosition(existing.id, state.original.currentPage, state.translationOffset);
+        state.currentSessionId = existing.id;
+        return;
+    }
+
+    // Enforce 20-session limit (drop least recently opened)
+    if (sessions.length >= 20) {
+        await deleteSession(sessions[sessions.length - 1].id);
+    }
+
+    // Read files again — first reads were consumed by PDF.js/EPUB.js
+    const [originalData, translationData] = await Promise.all([
+        readFileAsArrayBuffer(origFile),
+        readFileAsArrayBuffer(transFile)
+    ]);
+
+    const meta = {
+        name,
+        originalName, originalType: state.original.type,
+        translationName, translationType: state.translation.type,
+        currentPage: state.original.currentPage,
+        translationOffset: state.translationOffset,
+        lastOpened: Date.now()
+    };
+
+    const id = await dbPut('sessions', meta);
+    await dbPut('sessionFiles', { id, originalData, translationData });
+    state.currentSessionId = id;
 }
 
 // Filter EPUB chapters to only include actual chapters
@@ -472,6 +584,11 @@ async function renderBothSides() {
     
     // Setup synchronized scrolling after both sides are rendered
     setupSyncedScrolling();
+
+    // Auto-save position (fire-and-forget — does not block navigation)
+    if (state.currentSessionId) {
+        updateSessionPosition(state.currentSessionId, state.original.currentPage, state.translationOffset);
+    }
 }
 
 async function renderSide(side, pageNum) {
@@ -678,8 +795,176 @@ function showScreen(screen) {
     elements.readerScreen.style.display = screen === 'reader' ? 'flex' : 'none';
 }
 
-elements.closeButton.addEventListener('click', () => {
+elements.closeButton.addEventListener('click', async () => {
+    if (state.currentSessionId) {
+        await updateSessionPosition(state.currentSessionId, state.original.currentPage, state.translationOffset);
+    }
     showScreen('upload');
+    renderLibrary();
+});
+
+// ============================================================
+// Library UI
+// ============================================================
+
+async function renderLibrary() {
+    const section = document.getElementById('library-section');
+    const list = document.getElementById('library-list');
+    if (!section || !list) return;
+
+    const sessions = await getAllSessions();
+    if (sessions.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    list.innerHTML = '';
+
+    sessions.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'library-item';
+
+        const dateStr = new Date(session.lastOpened).toLocaleDateString(undefined, {
+            month: 'short', day: 'numeric', year: 'numeric'
+        });
+        const typeInfo = `${session.originalType.toUpperCase()} / ${session.translationType.toUpperCase()}`;
+
+        item.innerHTML = `
+            <div class="library-item-info">
+                <div class="library-item-name">${session.name}</div>
+                <div class="library-item-meta">Chapter ${session.currentPage} &bull; ${typeInfo} &bull; ${dateStr}</div>
+            </div>
+            <button class="library-item-delete" aria-label="Delete">&times;</button>
+        `;
+
+        item.querySelector('.library-item-info').addEventListener('click', () => {
+            loadSessionFromLibrary(session.id);
+        });
+
+        item.querySelector('.library-item-delete').addEventListener('click', async e => {
+            e.stopPropagation();
+            await deleteSession(session.id);
+            renderLibrary();
+        });
+
+        list.appendChild(item);
+    });
+}
+
+async function loadSessionFromLibrary(sessionId) {
+    const [meta, files] = await Promise.all([
+        dbGet('sessions', sessionId),
+        dbGet('sessionFiles', sessionId)
+    ]);
+    if (!meta || !files) { alert('Saved book data not found.'); return; }
+
+    // Save outgoing session position before switching
+    if (state.currentSessionId && state.currentSessionId !== sessionId) {
+        await updateSessionPosition(state.currentSessionId, state.original.currentPage, state.translationOffset);
+    }
+
+    elements.startButton.textContent = 'Loading...';
+    elements.startButton.disabled = true;
+
+    try {
+        state.original.file = null;
+        state.original.type = meta.originalType;
+        state.translation.file = null;
+        state.translation.type = meta.translationType;
+        scrollListenersAttached = false;
+
+        await Promise.all([
+            loadBookFromBuffer('original', files.originalData),
+            loadBookFromBuffer('translation', files.translationData)
+        ]);
+
+        state.original.currentPage = meta.currentPage;
+        state.translationOffset = meta.translationOffset;
+        state.currentSessionId = sessionId;
+
+        updateOffsetDisplay();
+        populateChapterDropdowns();
+        showScreen('reader');
+        await renderBothSides();
+
+        // Mark as recently opened (fire-and-forget)
+        updateSessionPosition(sessionId, meta.currentPage, meta.translationOffset);
+    } catch (error) {
+        console.error('Error loading session:', error);
+        alert(`Error loading saved books: ${error.message}`);
+    }
+
+    elements.startButton.textContent = 'Start Reading';
+    elements.startButton.disabled = false;
+}
+
+// Render library on page load
+renderLibrary();
+
+// ============================================================
+// Panel Toggle (dual / left-only / right-only)
+// ============================================================
+
+let panelMode = null; // null = both, 'original' = left only, 'translation' = right only
+
+function cyclePanelMode() {
+    const readerScreen = elements.readerScreen;
+    const btn = elements.panelToggle;
+
+    if (panelMode === null) {
+        panelMode = 'original';
+        readerScreen.classList.add('show-original');
+        btn.textContent = '← Left';
+    } else if (panelMode === 'original') {
+        panelMode = 'translation';
+        readerScreen.classList.remove('show-original');
+        readerScreen.classList.add('show-translation');
+        btn.textContent = 'Right →';
+    } else {
+        panelMode = null;
+        readerScreen.classList.remove('show-translation');
+        btn.textContent = 'Both';
+    }
+
+    // Re-render newly visible panels so PDFs rescale to the new width
+    if (panelMode !== 'translation') renderSide('original', state.original.currentPage);
+    if (panelMode !== 'original') renderSide('translation', state.translation.currentPage);
+}
+
+if (elements.panelToggle) {
+    elements.panelToggle.addEventListener('click', cyclePanelMode);
+}
+
+// ============================================================
+// Immersive Mode (tap content area to hide/show controls)
+// ============================================================
+
+let isImmersive = false;
+let isTogglingImmersive = false;
+
+function toggleImmersiveMode() {
+    isImmersive = !isImmersive;
+    isTogglingImmersive = true;
+    elements.readerScreen.classList.toggle('immersive', isImmersive);
+
+    if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform()) {
+        const { StatusBar } = Capacitor.Plugins;
+        if (isImmersive) {
+            StatusBar.hide();
+        } else {
+            StatusBar.show();
+        }
+    }
+
+    // StatusBar show/hide triggers a viewport resize — suppress the re-render
+    setTimeout(() => { isTogglingImmersive = false; }, 600);
+}
+
+document.getElementById('content-wrapper').addEventListener('click', e => {
+    if (elements.readerScreen.style.display !== 'flex') return;
+    if (e.target.closest('button, select, a, input')) return;
+    toggleImmersiveMode();
 });
 
 // Synchronized scrolling for EPUBs
@@ -748,16 +1033,9 @@ function syncScroll(source, target) {
 
 // Handle window resize
 window.addEventListener('resize', async () => {
+    if (isTogglingImmersive) return;
     if (elements.readerScreen.style.display === 'flex' && (state.original.pdf || state.original.epub)) {
         await renderBothSides();
     }
 });
 
-// Service Worker registration for PWA
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-            .then(reg => console.log('Service Worker registered'))
-            .catch(err => console.log('Service Worker registration failed'));
-    });
-}

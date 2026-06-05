@@ -1,0 +1,16 @@
+{
+  "name": "bilingual-reader",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "mkdir -p www && cp index.html app.js manifest.json icon-192.png icon-512.png www/ && cp -r js www/"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
+    "@capacitor/status-bar": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}

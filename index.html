@@ -11,13 +11,13 @@
     <link rel="apple-touch-icon" href="icon-192.png">
     
     <!-- PDF.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    
+    <script src="js/pdf.min.js"></script>
+
     <!-- JSZip (required by Epub.js) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
+    <script src="js/jszip.min.js"></script>
+
     <!-- Epub.js -->
-    <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+    <script src="js/epub.min.js"></script>
     
     <style>
         :root {
@@ -470,24 +470,17 @@
         .epub-container {
             width: 100%;
             height: 100%;
-            background-color: white;
+            background-color: var(--bg-surface);
+            color: var(--text-primary);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             overflow-y: auto;
             overflow-x: hidden;
             padding: 20px;
             transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-            border: 1px solid #e0e0e0;
+            border: 1px solid var(--border-color);
         }
 
-        body.light-mode .epub-container {
-            border-color: #e0e0e0;
-        }
-
-        body:not(.light-mode) .epub-container {
-            border-color: #3a3a3c;
-        }
-
-        /* Text dark mode for reading */
+        /* Text dark mode — explicit override (dark epub in a light app theme) */
         .epub-container.text-dark-mode {
             background-color: #2c2c2e;
             color: #e8e8e8;
@@ -702,6 +695,110 @@
             color: var(--text-secondary);
             font-style: italic;
         }
+
+        /* Library */
+        #library-section {
+            margin-bottom: 25px;
+        }
+
+        .library-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .library-header h3 {
+            color: var(--text-primary);
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .library-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            gap: 12px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .library-item:hover, .library-item:active {
+            background-color: var(--bg-tertiary);
+        }
+
+        .library-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .library-item-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 15px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .library-item-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }
+
+        .library-item-delete {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            flex-shrink: 0;
+            transition: color 0.2s;
+        }
+
+        .library-item-delete:hover {
+            color: var(--danger-color);
+        }
+
+        /* Immersive reading mode — hides bottom controls */
+        #controls {
+            transition: transform 0.3s ease;
+        }
+
+        #reader-screen.immersive #controls {
+            transform: translateY(100%);
+            pointer-events: none;
+        }
+
+        /* Tap hint bar — subtle indicator controls are hidden */
+        #reader-screen.immersive::after {
+            content: '';
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--accent-color);
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        /* Single panel mode */
+        #reader-screen.show-original .reader-panel:last-child {
+            display: none;
+        }
+
+        #reader-screen.show-translation .reader-panel:first-child {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -718,7 +815,15 @@
         <div class="upload-container">
             <h1>📚 Dual Language Reader</h1>
             <div class="subtitle">Read side-by-side with smart alignment • PDF & EPUB support</div>
-            
+
+            <!-- Saved book library (shown only when sessions exist) -->
+            <div id="library-section" style="display:none;">
+                <div class="library-header">
+                    <h3>Saved Books</h3>
+                </div>
+                <div id="library-list"></div>
+            </div>
+
             <div class="upload-section">
                 <label>Original Language (Italian, French, Japanese, etc.)</label>
                 <div class="file-input-wrapper">
@@ -861,6 +966,7 @@
                 <button class="nav-button small" id="translation-forward">►</button>
             </div>
             <button class="nav-button" id="toggle-scroll-sync" style="display: none; background-color: var(--success-color);">🔗</button>
+            <button class="nav-button secondary" id="panel-toggle">Both</button>
             <button class="nav-button secondary" id="toggle-text-mode">☀️ Light Text</button>
             <button class="nav-button danger" id="close-reader-bottom">✕</button>
         </div>
